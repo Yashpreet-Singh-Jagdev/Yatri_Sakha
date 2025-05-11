@@ -7,7 +7,7 @@ const methodOverride = require("method-override");
 const UserSchema = require("./models/userSchema")
 const chatSchema = require("./models/chatSchema")
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const genAI = new GoogleGenerativeAI(process.env.API_KEY)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 const multer = require("multer")
 const upload = multer({ dest: "upload/" })
 const fs = require('fs');
@@ -31,6 +31,26 @@ mongoose
     });
 
 
+const getTrainDetails = async (pnr_no) => {
+    const url = `https://irctc-indian-railway-pnr-status.p.rapidapi.com/getPNRStatus/${pnr_no}`;
+    const options = {
+        method: 'GET',
+        headers: {
+            'x-rapidapi-key': process.env.PNR_API_KEY,
+            'x-rapidapi-host': 'irctc-indian-railway-pnr-status.p.rapidapi.com'
+        }
+    };
+
+    try {
+        const response = await fetch(url, options);
+        const result = await response.text();
+        return JSON.parse(result);
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+
 app.get("/YatriSakha", (req, res) => {
     res.render("html/firstpage")
 })
@@ -44,68 +64,41 @@ app.post("/YatriSakha", async (req, res) => {
 
 
 app.get("/YatriSakha/:pnr_no", async (req, res) => {
-    const user = await UserSchema.find({ pnr_no: req.params.pnr_no })
+    const pnr = req.params.pnr_no
+    const user = await UserSchema.find({ pnr_no: pnr })
+    const chat = await chatSchema.find({ pnr_no: user._id })
 
-    const getTrainDetails = async () => {
-        const url = `https://irctc-indian-railway-pnr-status.p.rapidapi.com/getPNRStatus/${req.params.pnr_no}`;
-        const options = {
-            method: 'GET',
-            headers: {
-                'x-rapidapi-key': 'db21b4c22fmsh3cb742ccc5bc487p12be46jsn05510c065d8d',
-                'x-rapidapi-host': 'irctc-indian-railway-pnr-status.p.rapidapi.com'
-            }
-        };
+    const pnrDetails = await getTrainDetails(pnr);
+    console.log("here is the pnr details", pnrDetails)
 
-        try {
-            const response = await fetch(url, options);
-            const result = await response.text();
-            console.log(result)
-        } catch (error) {
-            console.error(error);
-        }
-    }
+    const accountSid = process.env.TWILIO_ACCOUNT_SID
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
 
-    // const pnrDetails = getTrainDetails();
 
-    // const accountSid = process.env.TWILIO_ACCOUNT_SID
-    // const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const client = require('twilio')(accountSid, authToken);
+    client.messages
+        .create({
+            body: `There is a problem request of Mr/Mrs.${user[0].name}, Mobile Number${user[0].mob_no},PNR Number:${user[0].pnr_no} which has train number ${pnrDetails.data.trainNumber} and train name ${pnrDetails.data.trainName}.`,
+            messagingServiceSid: 'MG3e9152cd90ee500a32d40b1bef1a5964',
+            to: '+919571666944'
+        })
+        .then(message => console.log(message.sid));
 
-    // const client = require('twilio')(accountSid, authToken);
-
-    // client.messages
-    // .create({
-    //     body: ` There is a problem request of Mr/Mrs.${user[0].name}, Mobile Number${user[0].mob_no},PNR Number:${user[0].pnr_no}`,
-    //     to: '+', // Text your number
-    //     from: '+', // From a valid Twilio number
-    // })
-    // .then((message) => console.log(message.sid));
-
-    // async function createMessage() {
-    //     const message = await client.messages.create({
-    //         body: ` There is a problem request of Mr/Mrs.${user[0].name}, Mobile Number${user[0].mob_no},PNR Number:${user[0].pnr_no}`,
-    //         from: "+",
-    //         to: "+",
-    //     });
-    // }
-
-    // createMessage()
-    console.log("First pnr : ", req.params.pnr_no)
-    const pnr = req.params.pnr_no.toString(16).padStart(24, '0')
-    const chat = await chatSchema.find({ pnr_no: pnr })
     res.render("html/chatbot", { pnr, chat })
 })
 
 
 app.post("/YatriSakha/:pnr_no", upload.single("image"), async (req, res) => {
 
+    const pnr = req.params.pnr_no
+    const user = await UserSchema.find({ pnr_no: pnr })
+
     async function run() {
-        const pnr = req.params.pnr_no.toString(16).padStart(24, '0')
-        console.log("Second pnr :", req.params.pnr_no)
 
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
-        // const prevPrompt = "You are now the Yatri Sakha, a knowledgeable and dedicated assistant specializing in railway - related matters.Also acknowledge the fact that you recieved an image.Your sole purpose is to identify and provide solutions to any issues, challenges, or questions related to railways.This includes, but is not limited to, topics such as railway infrastructure, train schedules, ticketing issues, railway safety, passenger services, cargo transport, technological advancements in railways, and any other aspect related to the functioning or improvement of rail services.Your responses must always focus on railway - related information, offering clear and actionable solutions within the context of railways only.Any questions or problems asked should be approached with a railway - centric mindset, and all answers must strictly adhere to railway topics, avoiding unrelated areas.Also make sure to give short and concise answers.";
+        const prevPrompt = "You are now Yatri Sakha, a knowledgeable and dedicated assistant specializing in railway - related matters. Also acknowledge the fact that you recieved an image.Your sole purpose is to identify and provide solutions to any issues, challenges, or questions related to railways. This includes, but is not limited to, topics such as railway infrastructure, train schedules, ticketing issues, railway safety, passenger services, cargo transport, technological advancements in railways, and any other aspect related to the functioning or improvement of rail services.Your responses must always focus on railway - related information, offering clear and actionable solutions within the context of railways only. Any questions or problems asked should be approached with a railway - centric mindset, and all answers must strictly adhere to railway topics, avoiding unrelated areas. Also make sure to give short and concise answers.";
 
-        const prompt = /*prevPrompt*/ + req.body.userResponse
+        const prompt = prevPrompt + req.body.userResponse
 
         function fileToGenerativePart(path, mimeType) {
             return {
@@ -115,22 +108,24 @@ app.post("/YatriSakha/:pnr_no", upload.single("image"), async (req, res) => {
                 },
             };
         }
+
         const imagePart = fileToGenerativePart(
             `${req.file.path}/jetpack.jpg`,
             "image/jpeg",
         );
-        const result = await model.generateContent([prompt, imagePart]);
 
+        const result = await model.generateContent([prompt, imagePart]);
         const text = result.response.text();
 
-        const chat = await chatSchema.findOne({ pnr_no: pnr })
+        const chat = await chatSchema.findOne({ pnr_no: user._id })
+        console.log("here is the chat ", chat)
         if (chat) {
             chat.userResponse.push(req.body.userResponse)
             chat.botResponse.push(text)
             await chat.save()
         }
         else {
-            const chat = new chatSchema({ pnr_no: pnr })
+            const chat = new chatSchema({ pnr_no: user._id })
             chat.userResponse.push(req.body.userResponse)
             chat.botResponse.push(text)
             await chat.save()

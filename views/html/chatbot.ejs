@@ -3,7 +3,6 @@
 
         <body>
             <div>
-                <%const c=chat[0]%>
 
                         <div class="chatbot-container">
                             <div class="chat-header">
@@ -11,7 +10,8 @@
                             </div>
                             <div class="chat-window" id="chat-window">
                                 <div class="message bot-message">Hello! How can I assist you today?</div>
-                                <%if(c){%>
+                                <%if(chat[0]){%>
+                                    <%const c=chat[0]%>
                                 <%for(let i=0;i<c.userResponse.length;i++){%>
                                     <div class="message user-message">
                                         <%=c.userResponse[i]%>

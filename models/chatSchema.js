@@ -10,7 +10,7 @@ const chatSchema = new mongoose.Schema({
     }],
     pnr_no: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "user"
+        ref: "UserSchema"
     }
 })
 
